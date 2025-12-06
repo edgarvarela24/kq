@@ -14,27 +14,28 @@ A flexible guide for building `kq` — an interactive Kubernetes CLI.
 - List namespaces
 - Unit tests with fake clientset
 
-### Phase 3: Pod Selection (current)
+### Phase 3: Pod Selection ✅
 - List pods in a namespace
-- Fuzzy-find UI with promptui
+- Interactive selection with filtering (huh)
 - Wire into `kq pods` command
 
-### Phase 4: Pod Actions
-- Logs (stream pod logs)
-- Exec (shell into pod)
+### Phase 4: Logs Action (current)
+- `kq logs` subcommand for power users
+- Action menu after pod selection for interactive flow
+- Options: follow, timestamps, previous, container selection
+- `--dry-run` flag to show kubectl equivalent
 
-### Phase 5: Polish
-- `--dry-run` flag (show kubectl equivalent)
-- `--namespace` flag (skip namespace prompt)
-- Better error messages
-- Helpful `--help` text
+### Phase 5: Polish & Ship
+- Good error messages
+- README with usage examples
+- Demo GIF
+- Maybe: `exec` action
 
-### Stretch Goals
+### Stretch Goals (post-ship)
+- Additional actions (exec, describe, port-forward)
 - Additional resource types (deployments, services)
-- Port-forward action
-- Describe action
 - Config file support
 
 ---
 
-*This roadmap is intentionally light. We'll reassess as we go.*
+*Focus: One or two polished actions over many half-baked ones.*
