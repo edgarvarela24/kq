@@ -1,6 +1,7 @@
 package kube
 
 import (
+	"sort"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -9,25 +10,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
-// TestListNameSpaces tests the ListNameSpaces function.
-//
-// This is a "table-driven test" — a Go idiom where you define test cases
-// in a slice and loop through them. Benefits:
-// - Easy to add new cases
-// - Clear what each case tests
-// - Shared test logic
-//
-// TODO: Implement the test
-//
-// Steps:
-// 1. Create fake namespace objects (corev1.Namespace)
-// 2. Create a fake clientset with those namespaces
-// 3. Call ListNameSpaces with the fake clientset
-// 4. Assert the returned names match what you expect
-//
-// Useful:
-// - fake.NewSimpleClientset(objects...) creates a fake clientset
-// - Objects must satisfy runtime.Object (k8s resources do)
 func TestListNameSpaces(t *testing.T) {
 	// Table-driven test cases
 	tests := []struct {
@@ -54,10 +36,6 @@ func TestListNameSpaces(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// TODO: Build fake namespace objects from tt.namespaces
-			//
-			// You need to create []runtime.Object containing *corev1.Namespace
-			// Each namespace needs at minimum: ObjectMeta.Name
 			var objects []runtime.Object
 			for _, nsName := range tt.namespaces {
 				ns := &corev1.Namespace{
@@ -67,13 +45,8 @@ func TestListNameSpaces(t *testing.T) {
 				}
 				objects = append(objects, ns)
 			}
-			// TODO: Create fake clientset
-			// fake.NewSimpleClientset(objects...)
 			clientset := fake.NewSimpleClientset(objects...)
-			// TODO: Call ListNameSpaces
 			got, err := ListNameSpaces(clientset)
-			// TODO: Compare result with tt.want
-			// Use t.Errorf() on mismatch
 			if err != nil {
 				t.Fatalf("ListNameSpaces() error: %v", err)
 			}
@@ -89,10 +62,73 @@ func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
+	aCopy := make([]string, len(a))
+	bCopy := make([]string, len(b))
+	copy(aCopy, a)
+	copy(bCopy, b)
+	sort.Strings(aCopy)
+	sort.Strings(bCopy)
 	for i := range a {
-		if a[i] != b[i] {
+		if aCopy[i] != bCopy[i] {
 			return false
 		}
 	}
 	return true
+}
+
+func TestListPods(t *testing.T) {
+	tests := []struct {
+		name      string   // description of this test case
+		namespace string   // namespace to query
+		pods      []string // pod names to create in that namespace
+		want      []string // expected result from ListPods
+	}{
+		{
+			name:      "returns empty slice when no pods",
+			namespace: "default",
+			pods:      []string{},
+			want:      []string{},
+		},
+		{
+			name:      "returns single pod",
+			namespace: "default",
+			pods:      []string{"nginx-abc123"},
+			want:      []string{"nginx-abc123"},
+		},
+		{
+			name:      "returns multiple pods",
+			namespace: "default",
+			pods:      []string{"nginx-abc123", "redis-def456", "busybox-ghi789"},
+			want:      []string{"nginx-abc123", "redis-def456", "busybox-ghi789"},
+		},
+		{
+			name:      "returns only pods from specified namespace",
+			namespace: "staging",
+			pods:      []string{"web-xyz789"},
+			want:      []string{"web-xyz789"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var objects []runtime.Object
+			for _, podName := range tt.pods {
+				pod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      podName,
+						Namespace: tt.namespace,
+					},
+				}
+				objects = append(objects, pod)
+			}
+			clientset := fake.NewSimpleClientset(objects...)
+			got, err := ListPods(clientset, tt.namespace)
+			if err != nil {
+				t.Fatalf("ListPods() error: %v", err)
+			}
+			if !equalStringSlices(got, tt.want) {
+				t.Errorf("ListPods() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

@@ -33,25 +33,6 @@ import (
 // Loading order (same as kubectl):
 // 1. $KUBECONFIG environment variable (if set)
 // 2. ~/.kube/config (default location)
-//
-// TODO: Implement this function
-//
-// Steps:
-// 1. Determine the kubeconfig path (check $KUBECONFIG, fallback to ~/.kube/config)
-// 2. Build a *rest.Config from the kubeconfig file
-// 3. Create a *kubernetes.Clientset from the config
-// 4. Return the clientset (or error if something fails)
-//
-// Useful functions to look up:
-// - os.Getenv() - get environment variables
-// - os.UserHomeDir() - get user's home directory
-// - filepath.Join() - build file paths safely
-// - clientcmd.BuildConfigFromFlags() - builds config from kubeconfig path
-// - kubernetes.NewForConfig() - creates clientset from config
-//
-// DEBUGGER EXERCISE: After implementing, set a breakpoint and inspect:
-// - The 'config' variable (look at Host, BearerToken fields)
-// - The 'clientset' variable (expand it to see CoreV1, AppsV1, etc.)
 func NewClient() (*kubernetes.Clientset, error) {
 	// Step 1: Find kubeconfig path
 	// Check $KUBECONFIG first, then fall back to ~/.kube/config
@@ -94,23 +75,16 @@ func ListNameSpaces(clientset kubernetes.Interface) ([]string, error) {
 }
 
 // ListPods returns the names of all pods in a given namespace.
-//
-// TODO: Implement this function
-//
-// This is very similar to ListNameSpaces, but:
-// - You need to specify which namespace to list pods from
-// - Use clientset.CoreV1().Pods(namespace) instead of Namespaces()
-//
-// Docs:
-// - PodInterface: https://pkg.go.dev/k8s.io/client-go/kubernetes/typed/core/v1#PodInterface
-//
-// DEBUGGER EXERCISE: Inspect a pod object after listing.
-// Look at pod.Status.Phase — what values can it have?
 func ListPods(clientset kubernetes.Interface, namespace string) ([]string, error) {
-	// TODO: Get the list of pods from the cluster
-	// Similar pattern to ListNameSpaces, but use Pods(namespace)
+	ctx := context.Background()
+	podList, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pods: %w", err)
+	}
 
-	// TODO: Extract and return the pod names as a slice of strings
-
-	return nil, fmt.Errorf("not implemented")
+	pods := make([]string, len(podList.Items))
+	for i, pod := range podList.Items {
+		pods[i] = pod.Name
+	}
+	return pods, nil
 }
