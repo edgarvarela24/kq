@@ -92,3 +92,25 @@ func ListNameSpaces(clientset kubernetes.Interface) ([]string, error) {
 	}
 	return names, nil
 }
+
+// ListPods returns the names of all pods in a given namespace.
+//
+// TODO: Implement this function
+//
+// This is very similar to ListNameSpaces, but:
+// - You need to specify which namespace to list pods from
+// - Use clientset.CoreV1().Pods(namespace) instead of Namespaces()
+//
+// Docs:
+// - PodInterface: https://pkg.go.dev/k8s.io/client-go/kubernetes/typed/core/v1#PodInterface
+//
+// DEBUGGER EXERCISE: Inspect a pod object after listing.
+// Look at pod.Status.Phase — what values can it have?
+func ListPods(clientset kubernetes.Interface, namespace string) ([]string, error) {
+	// TODO: Get the list of pods from the cluster
+	// Similar pattern to ListNameSpaces, but use Pods(namespace)
+
+	// TODO: Extract and return the pod names as a slice of strings
+
+	return nil, fmt.Errorf("not implemented")
+}
