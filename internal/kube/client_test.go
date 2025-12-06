@@ -1,6 +1,7 @@
 package kube
 
 import (
+	"bytes"
 	"sort"
 	"testing"
 
@@ -131,4 +132,52 @@ func TestListPods(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGetPodLogs_Integration tests log streaming against a real cluster.
+//
+// This is an integration test — it requires a running Kubernetes cluster.
+// Skip it if no cluster is available.
+//
+// Run with: go test ./internal/kube/... -v -run TestGetPodLogs_Integration
+//
+// NOTE: The fake clientset doesn't support streaming, so we test against
+// a real cluster. This test is skipped in CI environments.
+func TestGetPodLogs_Integration(t *testing.T) {
+	// Skip if we can't connect to a cluster
+	client, err := NewClient()
+	if err != nil {
+		t.Skip("Skipping integration test: no cluster available")
+	}
+
+	// This test assumes you have a running pod in kube-system namespace
+	// (coredns is usually there in kind clusters)
+	namespace := "kube-system"
+
+	// Get a pod name dynamically
+	pods, err := ListPods(client, namespace)
+	if err != nil || len(pods) == 0 {
+		t.Skip("Skipping integration test: no pods in kube-system")
+	}
+	podName := pods[0]
+
+	// Capture logs into a buffer
+	var buf bytes.Buffer
+	opts := PodLogOptions{
+		Follow:     false, // Important: don't follow or test hangs
+		Timestamps: false,
+		Previous:   false,
+	}
+
+	err = GetPodLogs(client, namespace, podName, opts, &buf)
+	if err != nil {
+		t.Fatalf("GetPodLogs() error: %v", err)
+	}
+
+	// Verify we got some log output
+	if buf.Len() == 0 {
+		t.Error("GetPodLogs() returned empty logs")
+	}
+
+	t.Logf("Got %d bytes of logs from %s/%s", buf.Len(), namespace, podName)
 }

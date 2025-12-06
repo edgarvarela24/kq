@@ -55,3 +55,27 @@ func SelectOne(label string, options []string) (string, error) {
 
 	return selection, nil
 }
+
+// SelectLogOptions prompts the user for log options: follow, timestamps, previous, container.
+func SelectLogOptions() (follow bool, timestamps bool, previous bool, err error) {
+	var followOpt, timestampsOpt, previousOpt bool
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Follow Logs (-f)").
+				Value(&followOpt),
+			huh.NewConfirm().
+				Title("Timestamps").
+				Value(&timestampsOpt),
+			huh.NewConfirm().
+				Title("Previous Logs").
+				Value(&previousOpt),
+		),
+	)
+	err = form.Run()
+	if err != nil {
+		return false, false, false, err
+	}
+
+	return followOpt, timestampsOpt, previousOpt, nil
+}

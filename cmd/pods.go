@@ -13,7 +13,12 @@ import (
 	"github.com/evarela/kq/internal/kube"
 	"github.com/evarela/kq/internal/ui"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/kubernetes"
 )
+
+var podActions = []string{
+	"logs",
+}
 
 // podsCmd represents the pods command
 //
@@ -67,15 +72,79 @@ Actions available:
 			fmt.Fprintf(os.Stderr, "Error listing pods in namespace %q: %v\n", namespace, err)
 			os.Exit(1)
 		}
+
+		if len(pods) == 0 {
+			fmt.Fprintf(os.Stderr, "No pods found in namespace %q\n", namespace)
+			os.Exit(1)
+		}
+
 		pod, err := ui.SelectOne("Select Pod", pods)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error selecting pod: %v\n", err)
 			os.Exit(1)
 		}
-		// Step 4: Print the selection (for now)
-		//   - Later we'll add action selection here
-		fmt.Printf("Selected Pod: %s in Namespace: %s\n", pod, namespace)
+		// Step 4: List pod actions
+		//   - Use the podActions slice defined above
+		//   - Let user select one with ui.SelectOne()
+		action, err := ui.SelectOne("Select Action", podActions)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error selecting action: %v\n", err)
+			os.Exit(1)
+		}
+		// Step 5: Perform the selected action
+		switch action {
+		case "logs":
+			dryRun, _ := cmd.Flags().GetBool("dry-run")
+			executeLogsAction(client, namespace, pod, dryRun)
+		default:
+			fmt.Fprintf(os.Stderr, "Action %q not implemented yet\n", action)
+			os.Exit(1)
+		}
 	},
+}
+
+func executeLogsAction(client kubernetes.Interface, namespace, pod string, dryRun bool) {
+	if dryRun {
+		// Print the kubectl command that would be run
+		fmt.Printf("kubectl logs -n %s %s\n", namespace, pod)
+		return
+	}
+	containers, err := kube.ListContainers(client, namespace, pod)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error listing containers in pod %q: %v\n", pod, err)
+		os.Exit(1)
+	}
+	var container string
+	if len(containers) == 1 {
+		container = containers[0]
+	} else {
+		// Prompt user to select a container if multiple exist
+		container, err = ui.SelectOne("Select Container", containers)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error selecting container: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// Prompt for log options
+	follow, timestamps, previous, err := ui.SelectLogOptions()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error selecting log options: %v\n", err)
+		os.Exit(1)
+	}
+	// Create PodLogOptions
+	logOpts := kube.PodLogOptions{
+		Follow:     follow,
+		Timestamps: timestamps,
+		Previous:   previous,
+		Container:  container,
+	}
+	// Stream logs
+	err = kube.GetPodLogs(client, namespace, pod, logOpts, os.Stdout)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error streaming logs from pod %q: %v\n", pod, err)
+		os.Exit(1)
+	}
 }
 
 // init registers any flags specific to the pods command

@@ -15,9 +15,11 @@ package kube
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -87,4 +89,68 @@ func ListPods(clientset kubernetes.Interface, namespace string) ([]string, error
 		pods[i] = pod.Name
 	}
 	return pods, nil
+}
+
+// PodLogOptions configures how logs are retrieved
+type PodLogOptions struct {
+	Follow     bool
+	Timestamps bool
+	Previous   bool
+	Container  string // Empty string means default/only container
+}
+
+// GetPodLogs streams logs from a pod to the provided writer.
+//
+// TODO: Implement this function
+//
+// This is different from List functions — instead of returning data,
+// it streams data to an io.Writer (usually os.Stdout).
+//
+// Key concepts:
+// - GetLogs() returns a *rest.Request, not the logs directly
+// - Call .Stream(ctx) on the request to get an io.ReadCloser
+// - Use io.Copy() to pipe from the reader to your writer
+// - Don't forget to close the stream!
+//
+// Docs:
+// - PodInterface.GetLogs: https://pkg.go.dev/k8s.io/client-go/kubernetes/typed/core/v1#PodInterface
+// - corev1.PodLogOptions: https://pkg.go.dev/k8s.io/api/core/v1#PodLogOptions
+// - io.Copy: https://pkg.go.dev/io#Copy
+func GetPodLogs(clientset kubernetes.Interface, namespace, podName string, opts PodLogOptions, writer io.Writer) error {
+	// 1. Create a corev1.PodLogOptions struct with the options
+	logOpts := &corev1.PodLogOptions{
+		Follow:     opts.Follow,
+		Timestamps: opts.Timestamps,
+		Previous:   opts.Previous,
+		Container:  opts.Container,
+	}
+	// 2. Call clientset.CoreV1().Pods(namespace).GetLogs(podName, &opts)
+	ctx := context.Background()
+	logs := clientset.CoreV1().Pods(namespace).GetLogs(podName, logOpts)
+	// 3. Call .Stream(ctx) on the request to get a reader
+	reader, err := logs.Stream(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to stream logs: %w", err)
+	}
+	defer reader.Close()
+	// 4. Use io.Copy(writer, reader) to stream the logs
+	_, err = io.Copy(writer, reader)
+	if err != nil {
+		return fmt.Errorf("failed to copy logs: %w", err)
+	}
+	return nil
+}
+
+func ListContainers(clientset kubernetes.Interface, namespace, podName string) ([]string, error) {
+	ctx := context.Background()
+	pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pod: %w", err)
+	}
+
+	containerNames := make([]string, len(pod.Spec.Containers))
+	for i, container := range pod.Spec.Containers {
+		containerNames[i] = container.Name
+	}
+	return containerNames, nil
 }
