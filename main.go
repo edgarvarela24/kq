@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/evarela/kq/cmd"
+	"github.com/edgarvarela24/kq/cmd"
 )
 
 func main() {

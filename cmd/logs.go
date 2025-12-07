@@ -1,18 +1,15 @@
-// cmd/logs.go - The 'logs' subcommand
-//
-// Two ways to use:
-// 1. Power user:  kq logs -n <namespace> <pod-name>
-// 2. Interactive: kq pods → select pod → choose "logs" action
-//
-// Both paths use the same underlying log streaming logic.
+// Package cmd implements the CLI commands for kq.
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/evarela/kq/internal/kube"
-	"github.com/evarela/kq/internal/ui"
+	"github.com/edgarvarela24/kq/internal/kube"
+	"github.com/edgarvarela24/kq/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -22,66 +19,84 @@ var logsCmd = &cobra.Command{
 	Long: `Stream logs from a Kubernetes pod.
 
 If pod name is provided as argument, streams logs directly.
-If not, presents an interactive selection.
-
-Examples:
-  kq logs nginx-7d8f9-xyz              # Logs from pod (interactive namespace)
+If not, presents an interactive selection.`,
+	Example: `  kq logs nginx-7d8f9-xyz              # Logs from pod (interactive namespace)
   kq logs -n default nginx-7d8f9-xyz   # Logs from pod in specific namespace
-  kq logs                              # Interactive: select namespace, pod`,
+  kq logs                              # Interactive: select namespace, pod
+  kq logs -f nginx-xyz                 # Follow logs`,
+	Args: cobra.MaximumNArgs(1),
 
-	Run: func(cmd *cobra.Command, args []string) {
-		// TODO: Implement logs command
-		//
-		// Step 1: Create Kubernetes client
+	RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := kube.NewClient()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating Kubernetes client: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("creating kubernetes client: %w", err)
 		}
-		// Step 2: Determine namespace
-		//   - Check --namespace flag first
-		//   - Otherwise prompt for selection
+
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+
 		namespace := cmd.Flag("namespace").Value.String()
 		if namespace == "" {
-			namespaces, err := kube.ListNameSpaces(client)
+			namespaces, err := kube.ListNamespaces(ctx, client)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error listing namespaces: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("listing namespaces: %w", err)
 			}
 			namespace, err = ui.SelectOne("Select Namespace", namespaces)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error selecting namespace: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("selecting namespace: %w", err)
 			}
 		}
-		// Step 3: Determine pod
-		//   - Check if pod name was passed as argument (args[0])
-		//   - Otherwise prompt for selection
+
 		var podName string
 		if len(args) > 0 {
 			podName = args[0]
 		}
 		if podName == "" {
-			pods, err := kube.ListPods(client, namespace)
+			pods, err := kube.ListPods(ctx, client, namespace)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error listing pods in namespace %q: %v\n", namespace, err)
-				os.Exit(1)
+				return fmt.Errorf("listing pods in namespace %q: %w", namespace, err)
 			}
 			podName, err = ui.SelectOne("Select Pod", pods)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error selecting pod: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("selecting pod: %w", err)
 			}
 		}
-		// Step 4: Get log options from flags
-		//   - follow (-f)
-		//   - timestamps
-		//   - previous
-		//   - container (if multi-container pod)
-		follow, _ := cmd.Flags().GetBool("follow")
-		timestamps, _ := cmd.Flags().GetBool("timestamps")
-		previous, _ := cmd.Flags().GetBool("previous")
-		container, _ := cmd.Flags().GetString("container")
+
+		// Check if any log option flags were explicitly set
+		followChanged := cmd.Flags().Changed("follow")
+		timestampsChanged := cmd.Flags().Changed("timestamps")
+		previousChanged := cmd.Flags().Changed("previous")
+		containerChanged := cmd.Flags().Changed("container")
+
+		var follow, timestamps, previous bool
+		var container string
+
+		// If no flags were set, prompt interactively for options
+		if !followChanged && !timestampsChanged && !previousChanged && !containerChanged {
+			// Handle container selection for multi-container pods
+			containers, err := kube.ListContainers(ctx, client, namespace, podName)
+			if err != nil {
+				return fmt.Errorf("listing containers in pod %q: %w", podName, err)
+			}
+			if len(containers) == 1 {
+				container = containers[0]
+			} else {
+				container, err = ui.SelectOne("Select Container", containers)
+				if err != nil {
+					return fmt.Errorf("selecting container: %w", err)
+				}
+			}
+
+			follow, timestamps, previous, err = ui.SelectLogOptions()
+			if err != nil {
+				return fmt.Errorf("selecting log options: %w", err)
+			}
+		} else {
+			follow, _ = cmd.Flags().GetBool("follow")
+			timestamps, _ = cmd.Flags().GetBool("timestamps")
+			previous, _ = cmd.Flags().GetBool("previous")
+			container, _ = cmd.Flags().GetString("container")
+		}
 
 		logOpts := kube.PodLogOptions{
 			Follow:     follow,
@@ -89,48 +104,23 @@ Examples:
 			Previous:   previous,
 			Container:  container,
 		}
-		// Step 5: Check --dry-run flag
-		//   - If set, print kubectl equivalent and exit
-		//   - Example: kubectl logs -f -n default nginx-abc123
+
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		if dryRun {
-			kubectlCmd := "kubectl logs"
-			if follow {
-				kubectlCmd += " -f"
-			}
-			if timestamps {
-				kubectlCmd += " --timestamps"
-			}
-			if previous {
-				kubectlCmd += " -p"
-			}
-			if container != "" {
-				kubectlCmd += fmt.Sprintf(" -c %s", container)
-			}
-			kubectlCmd += fmt.Sprintf(" -n %s %s", namespace, podName)
+			fmt.Println(buildLogsCommand(namespace, podName, logOpts))
+			return nil
+		}
 
-			fmt.Println("Dry run mode. Equivalent command:")
-			fmt.Println(kubectlCmd)
-			return
+		if err := kube.GetPodLogs(ctx, client, namespace, podName, logOpts, os.Stdout); err != nil {
+			return fmt.Errorf("streaming logs from pod %q: %w", podName, err)
 		}
-		// Step 6: Stream logs
-		//   - Use kube.GetPodLogs()
-		//   - Pipe output to os.Stdout
-		err = kube.GetPodLogs(client, namespace, podName, logOpts, os.Stdout)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error streaming logs from pod %q: %v\n", podName, err)
-			os.Exit(1)
-		}
+		return nil
 	},
 }
 
 func init() {
-	// Local flags for logs command
 	logsCmd.Flags().BoolP("follow", "f", false, "Follow log output")
 	logsCmd.Flags().Bool("timestamps", false, "Show timestamps")
 	logsCmd.Flags().BoolP("previous", "p", false, "Show logs from previous container instance")
 	logsCmd.Flags().StringP("container", "c", "", "Container name (for multi-container pods)")
-
-	// Register with root
-	rootCmd.AddCommand(logsCmd)
 }

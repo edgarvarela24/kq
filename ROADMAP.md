@@ -1,41 +1,36 @@
 # kq Roadmap
 
-A flexible guide for building `kq` — an interactive Kubernetes CLI.
+Current status: **v0.1.0** - Pod logs functionality complete.
 
-## Phases
+## Current Features
 
-### Phase 1: Project Skeleton ✅
-- Go module setup
-- Cobra CLI framework
-- Basic `kq` and `kq pods` commands
+- [x] Interactive namespace selection
+- [x] Interactive pod selection with fuzzy filtering
+- [x] Pod logs streaming (follow, timestamps, previous)
+- [x] Container selection for multi-container pods
+- [x] Dry-run mode to show equivalent kubectl commands
+- [x] Works as standalone CLI or kubectl plugin
 
-### Phase 2: Kubernetes Client ✅
-- Connect to cluster via kubeconfig
-- List namespaces
-- Unit tests with fake clientset
+## Planned Features
 
-### Phase 3: Pod Selection ✅
-- List pods in a namespace
-- Interactive selection with filtering (huh)
-- Wire into `kq pods` command
+### Pod Actions
+- [ ] `exec` - Interactive shell into a container
+- [ ] `describe` - View detailed pod information  
+- [ ] `port-forward` - Forward local ports to a pod
+- [ ] `delete` - Delete a pod (with confirmation)
 
-### Phase 4: Logs Action (current)
-- `kq logs` subcommand for power users
-- Action menu after pod selection for interactive flow
-- Options: follow, timestamps, previous, container selection
-- `--dry-run` flag to show kubectl equivalent
+### Additional Resources
+- [ ] Deployments - Scale, restart, view status
+- [ ] Services - View endpoints, port-forward
+- [ ] ConfigMaps/Secrets - View and edit
+- [ ] Nodes - View status, cordon/drain
 
-### Phase 5: Polish & Ship
-- Good error messages
-- README with usage examples
-- Demo GIF
-- Maybe: `exec` action
-
-### Stretch Goals (post-ship)
-- Additional actions (exec, describe, port-forward)
-- Additional resource types (deployments, services)
-- Config file support
+### UX Improvements
+- [ ] Multi-select for batch operations
+- [ ] Saved favorites / recent selections
+- [ ] Custom themes
+- [ ] Config file for defaults
 
 ---
 
-*Focus: One or two polished actions over many half-baked ones.*
+Contributions welcome! Focus is on polished, well-tested features over quantity.

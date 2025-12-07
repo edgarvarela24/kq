@@ -2,12 +2,26 @@
 
 CLUSTER_NAME := kq-dev
 BINARY := kq
+PLUGIN_BINARY := kubectl-kq
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS := -ldflags "-X github.com/edgarvarela24/kq/cmd.Version=$(VERSION)"
 
 # === Build ===
 
 .PHONY: build
 build: ## Build the kq binary
-	go build -o $(BINARY) .
+	go build $(LDFLAGS) -o $(BINARY) .
+
+.PHONY: build-plugin
+build-plugin: ## Build as kubectl plugin (kubectl-kq)
+	go build $(LDFLAGS) -o $(PLUGIN_BINARY) .
+
+.PHONY: install-plugin
+install-plugin: build-plugin ## Install kubectl-kq to ~/bin
+	mkdir -p ~/bin
+	cp $(PLUGIN_BINARY) ~/bin/
+	@echo "Installed $(PLUGIN_BINARY) to ~/bin/"
+	@echo "Make sure ~/bin is in your PATH"
 
 .PHONY: test
 test: ## Run all tests

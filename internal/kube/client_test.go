@@ -2,7 +2,7 @@ package kube
 
 import (
 	"bytes"
-	"sort"
+	"context"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -11,12 +11,11 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
-func TestListNameSpaces(t *testing.T) {
-	// Table-driven test cases
+func TestListNamespaces(t *testing.T) {
 	tests := []struct {
-		name       string   // description of this test case
-		namespaces []string // namespaces to create in fake cluster
-		want       []string // expected result from ListNameSpaces
+		name       string
+		namespaces []string
+		want       []string
 	}{
 		{
 			name:       "returns empty slice when no namespaces",
@@ -39,50 +38,46 @@ func TestListNameSpaces(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var objects []runtime.Object
 			for _, nsName := range tt.namespaces {
-				ns := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: nsName,
-					},
-				}
-				objects = append(objects, ns)
+				objects = append(objects, &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{Name: nsName},
+				})
 			}
+
 			clientset := fake.NewSimpleClientset(objects...)
-			got, err := ListNameSpaces(clientset)
+			got, err := ListNamespaces(context.Background(), clientset)
 			if err != nil {
-				t.Fatalf("ListNameSpaces() error: %v", err)
+				t.Fatalf("ListNamespaces() error: %v", err)
 			}
 			if !equalStringSlices(got, tt.want) {
-				t.Errorf("ListNameSpaces() = %v, want %v", got, tt.want)
+				t.Errorf("ListNamespaces() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-// equalStringSlices compares two string slices for equality
 func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	aCopy := make([]string, len(a))
-	bCopy := make([]string, len(b))
-	copy(aCopy, a)
-	copy(bCopy, b)
-	sort.Strings(aCopy)
-	sort.Strings(bCopy)
-	for i := range a {
-		if aCopy[i] != bCopy[i] {
+	aMap := make(map[string]int)
+	for _, s := range a {
+		aMap[s]++
+	}
+	for _, s := range b {
+		if aMap[s] == 0 {
 			return false
 		}
+		aMap[s]--
 	}
 	return true
 }
 
 func TestListPods(t *testing.T) {
 	tests := []struct {
-		name      string   // description of this test case
-		namespace string   // namespace to query
-		pods      []string // pod names to create in that namespace
-		want      []string // expected result from ListPods
+		name      string
+		namespace string
+		pods      []string
+		want      []string
 	}{
 		{
 			name:      "returns empty slice when no pods",
@@ -114,16 +109,16 @@ func TestListPods(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var objects []runtime.Object
 			for _, podName := range tt.pods {
-				pod := &corev1.Pod{
+				objects = append(objects, &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      podName,
 						Namespace: tt.namespace,
 					},
-				}
-				objects = append(objects, pod)
+				})
 			}
+
 			clientset := fake.NewSimpleClientset(objects...)
-			got, err := ListPods(clientset, tt.namespace)
+			got, err := ListPods(context.Background(), clientset, tt.namespace)
 			if err != nil {
 				t.Fatalf("ListPods() error: %v", err)
 			}
@@ -134,50 +129,99 @@ func TestListPods(t *testing.T) {
 	}
 }
 
+func TestListContainers(t *testing.T) {
+	tests := []struct {
+		name       string
+		namespace  string
+		podName    string
+		containers []string
+		want       []string
+	}{
+		{
+			name:       "returns single container",
+			namespace:  "default",
+			podName:    "nginx-abc123",
+			containers: []string{"nginx"},
+			want:       []string{"nginx"},
+		},
+		{
+			name:       "returns multiple containers",
+			namespace:  "default",
+			podName:    "multi-container",
+			containers: []string{"app", "sidecar", "init"},
+			want:       []string{"app", "sidecar", "init"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			containers := make([]corev1.Container, len(tt.containers))
+			for i, name := range tt.containers {
+				containers[i] = corev1.Container{Name: name}
+			}
+
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      tt.podName,
+					Namespace: tt.namespace,
+				},
+				Spec: corev1.PodSpec{
+					Containers: containers,
+				},
+			}
+
+			clientset := fake.NewSimpleClientset(pod)
+			got, err := ListContainers(context.Background(), clientset, tt.namespace, tt.podName)
+			if err != nil {
+				t.Fatalf("ListContainers() error: %v", err)
+			}
+			if !equalStringSlices(got, tt.want) {
+				t.Errorf("ListContainers() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestListContainers_PodNotFound(t *testing.T) {
+	clientset := fake.NewSimpleClientset()
+	_, err := ListContainers(context.Background(), clientset, "default", "nonexistent")
+	if err == nil {
+		t.Error("ListContainers() expected error for nonexistent pod, got nil")
+	}
+}
+
 // TestGetPodLogs_Integration tests log streaming against a real cluster.
-//
-// This is an integration test — it requires a running Kubernetes cluster.
-// Skip it if no cluster is available.
-//
 // Run with: go test ./internal/kube/... -v -run TestGetPodLogs_Integration
-//
-// NOTE: The fake clientset doesn't support streaming, so we test against
-// a real cluster. This test is skipped in CI environments.
+// NOTE: Skipped if no cluster is available.
 func TestGetPodLogs_Integration(t *testing.T) {
-	// Skip if we can't connect to a cluster
 	client, err := NewClient()
 	if err != nil {
 		t.Skip("Skipping integration test: no cluster available")
 	}
 
-	// This test assumes you have a running pod in kube-system namespace
-	// (coredns is usually there in kind clusters)
 	namespace := "kube-system"
+	ctx := context.Background()
 
-	// Get a pod name dynamically
-	pods, err := ListPods(client, namespace)
+	pods, err := ListPods(ctx, client, namespace)
 	if err != nil || len(pods) == 0 {
 		t.Skip("Skipping integration test: no pods in kube-system")
 	}
-	podName := pods[0]
 
-	// Capture logs into a buffer
 	var buf bytes.Buffer
 	opts := PodLogOptions{
-		Follow:     false, // Important: don't follow or test hangs
+		Follow:     false,
 		Timestamps: false,
 		Previous:   false,
 	}
 
-	err = GetPodLogs(client, namespace, podName, opts, &buf)
+	err = GetPodLogs(ctx, client, namespace, pods[0], opts, &buf)
 	if err != nil {
 		t.Fatalf("GetPodLogs() error: %v", err)
 	}
 
-	// Verify we got some log output
 	if buf.Len() == 0 {
 		t.Error("GetPodLogs() returned empty logs")
 	}
 
-	t.Logf("Got %d bytes of logs from %s/%s", buf.Len(), namespace, podName)
+	t.Logf("Got %d bytes of logs from %s/%s", buf.Len(), namespace, pods[0])
 }
